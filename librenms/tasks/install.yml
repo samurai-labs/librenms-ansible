@@ -1,0 +1,109 @@
+---
+   - name: install utilities
+     apt: pkg={{ item }}  state=present
+     with_items:
+        - libapache2-mod-php5
+        - php5-cli
+        - php5-mysql
+        - php5-gd
+        - php5-snmp
+        - php-pear
+        - php5-curl
+        - snmp
+        - graphviz
+        - php5-mcrypt
+        - php5-json
+        - apache2
+        - fping
+        - imagemagick
+        - whois
+        - mtr-tiny
+        - python-mysqldb
+        - snmpd
+        - php-net-ipv4
+        - php-net-ipv6
+        - rrdtool
+        - git
+
+   - name: create mysql librenms pass
+     command: /usr/bin/openssl rand -base64 16
+     register: mysql_librenms_passwd
+
+   # clone github repo for librenms
+   - git: repo=https://github.com/librenms/librenms.git dest=/opt/librenms clone=yes update=no
+
+   - name: Add timezone to php.ini 
+     lineinfile: dest=/etc/php5/apache2/php.ini line="date.timezone = \"Pacific/Los_Angeles\"" state=present
+
+   - name: Add timezone to php.ini
+     lineinfile: dest=/etc/php5/cli/php.ini line="date.timezone = \"Pacific/Los_Angeles\"" state=present
+
+   - group: name=librenms
+   - user: name=librenms groups=librenms,www-data home=/opt/librenms system=yes createhome=no append=yes
+
+   # create log directory and change permissions
+   - file: path=/opt/librenms/rrd state=directory mode=0755 owner=www-data group=www-data
+   - file: path=/opt/librenms/logs state=directory mode=0755 owner=librenms group=librenms
+
+   # copy vhost file and create symbolic link
+   - template: src=/etc/ansible/roles/librenms/librenms/templates/librenms.conf dest=/etc/apache2/sites-available/
+   - file: src=/etc/apache2/sites-available/librenms.conf dest=/etc/apache2/sites-enabled/librenms.conf state=link
+   
+   # enable mcrypt
+   - shell: php5enmod mcrypt
+   - name: copy user my.cnf file with librenms passwd credentials
+     template: src=my.cnf.j2 dest=/opt/librenms/.my.cnf owner=librenms group=librenms mode=0600
+
+   # create mysql database 'librenms'
+   - mysql_db: name=librenms state=present
+
+   # create user with password based on random 16 character generated above 
+   - name: update mysql librenms passwd
+     mysql_user: name=librenms password={{ mysql_librenms_passwd.stdout }} priv=*.*:ALL state=present
+
+   # copy snmpd configuration file
+   - template: src=/etc/ansible/roles/librenms/librenms/templates/snmpd.conf dest=/etc/snmp/snmpd.conf 
+
+   # clone github repo for librenms
+   - git: repo=https://github.com/librenms/librenms.git dest=/opt/librenms clone=yes update=no
+
+   - name: Add timezone to php.ini 
+     lineinfile: dest=/etc/php5/apache2/php.ini line="date.timezone = \"Pacific/Los_Angeles\"" state=present
+
+   - name: Add timezone to php.ini
+     lineinfile: dest=/etc/php5/cli/php.ini line="date.timezone = \"Pacific/Los_Angeles\"" state=present
+
+   - group: name=librenms
+   - user: name=librenms groups=librenms,www-data home=/opt/librenms system=yes createhome=no append=yes
+
+   # create log directory and change permissions
+   - file: path=/opt/librenms/rrd state=directory mode=0755 owner=www-data group=www-data
+   - file: path=/opt/librenms/logs state=directory mode=0755 owner=librenms group=librenms
+
+   # copy vhost file and create symbolic link
+   - template: src=/etc/ansible/roles/librenms/librenms/templates/librenms.conf dest=/etc/apache2/sites-available/
+   - file: src=/etc/apache2/sites-available/librenms.conf dest=/etc/apache2/sites-enabled/librenms.conf state=link
+   
+   # enable mcrypt
+   - shell: php5enmod mcrypt
+
+   # enable site
+   - shell: a2ensite librenms.conf
+
+   # enable rewrite module
+   - shell: a2enmod rewrite
+
+   # disable default site
+   - shell: a2dissite 000-default
+
+   #restart apache after all configuration
+   - service: name=apache2 state=restarted
+
+   # move default config to config.php
+   - file: src=/opt/librenms/config.php.default dest=/opt/librenms/config.php state=link
+   
+   # configure config.php
+   - replace: dest=/opt/librenms/config.php regexp="USERNAME" replace="librenms" backup=yes
+   - replace: dest=/opt/librenms/config.php regexp="PASSWORD" replace="{{ mysql_librenms_passwd.stdout }}" backup=yes
+
+   - shell: cd /opt/librenms && php build-base.php

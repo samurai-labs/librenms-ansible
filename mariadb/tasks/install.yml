@@ -1,0 +1,11 @@
+---
+# MySQL modules
+   - name: Install MySQL
+     apt: name={{ item }} state=latest
+     with_items:
+       - mariadb-client
+       - mariadb-server
+       - python-mysqldb
+
+   - service: name=mysql state=restarted
+

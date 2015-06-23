@@ -1,0 +1,9 @@
+---
+- name: installs librenms and associated dependencies
+  hosts: librenms 
+  user: root
+
+  roles:
+    - librenms/utils
+    - librenms/mariadb
+    - librenms/librenms
